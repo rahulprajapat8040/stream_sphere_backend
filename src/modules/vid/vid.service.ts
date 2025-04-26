@@ -6,6 +6,7 @@ import { generatePagination, repsonseSender } from "src/helper/funcation.helper"
 import STRINGCONST from "src/common/stringConst";
 import { ResponseInterface } from "src/common/ResponseInterface";
 import { CommentDto } from "src/common/dtos/vid.dto";
+import { throwError } from "rxjs";
 
 @Injectable()
 export class VidService {
@@ -52,7 +53,13 @@ export class VidService {
         try {
             const { page = 1, limit = 10 } = queryParams
             const offset = Number((page - 1) * limit);
-            const videos = await this.videoModel.findAndCountAll({ limit, offset });
+            const videos = await this.videoModel.findAndCountAll({
+                limit, offset,
+                include: [
+                    { model: this.likeModel, attributes: ["likedById"] },
+                    { model: this.disLikeModel, attributes: ["disLikeById"] }
+                ]
+            });
             const response = generatePagination(videos, page, limit)
             return repsonseSender(STRINGCONST.DATA_FETCHED, HttpStatus.OK, true, response)
         } catch (error) {
@@ -62,11 +69,15 @@ export class VidService {
 
     async getVideoById(videoId: string): Promise<ResponseInterface> {
         try {
-            const video = await this.videoModel.findByPk(videoId)
+            const video = await this.videoModel.findByPk(videoId, {
+                include: [{ model: User }]
+            })
             const likesCount = await this.likeModel.count({ where: { videoId } });
             const dislikesCount = await this.disLikeModel.count({ where: { videoId } });
+            const followers = await this.channelModel.count({ where: { followedToId: video?.uploadedById } });
             (video as any).dataValues.likes = likesCount;
-            (video as any).dataValues.disLikes = dislikesCount
+            (video as any).dataValues.disLikes = dislikesCount;
+            (video as any).dataValues.followers = followers;
             return repsonseSender(STRINGCONST.DATA_FETCHED, HttpStatus.OK, true, video)
         } catch (error) {
             throw new BadRequestException(error.message)
@@ -130,11 +141,21 @@ export class VidService {
         }
     }
 
-    async startFollowing(user: User, followTo: string): Promise<ResponseInterface> {
+    async startFollowing(user: User, followedToId: string): Promise<ResponseInterface> {
         try {
+            const exist = await this.channelModel.findOne({
+                where: {
+                    followById: user.id,
+                    followedToId: followedToId
+                }
+            })
+            if (exist) {
+                await exist.destroy({ force: true })
+                return repsonseSender(STRINGCONST.DATA_DELETED, HttpStatus.OK, true, exist)
+            }
             const follow = await this.channelModel.create({
                 followById: user.id,
-                followedToId: followTo
+                followedToId: followedToId
             })
             return repsonseSender(STRINGCONST.DATA_ADDED, HttpStatus.OK, true, follow)
         } catch (error) {
@@ -156,12 +177,34 @@ export class VidService {
         }
     }
 
-    async getFollowers(user: User) {
+    async getFollowings(user: User, queryParams: any) {
         try {
+            const { page = 1, limit = 10, videoId } = queryParams
+            const offset = Number((page - 1) * limit);
             const followers = await this.channelModel.findAndCountAll({
-                where: { followById: user.id }
+                where: { followById: user.id },
+                include: [{
+                    model: User, as: 'followTo', include: [{ model: Videos }]
+                }],
+                limit, offset
             })
-            return repsonseSender(STRINGCONST.DATA_FETCHED, HttpStatus.OK, true, followers)
+            const response = generatePagination(followers, page, limit)
+            return repsonseSender(STRINGCONST.DATA_FETCHED, HttpStatus.OK, true, response)
+        } catch (error) {
+            throw new BadRequestException(error.message)
+        }
+    }
+
+    async getFollowingDetail(user: User, followedToId: string): Promise<ResponseInterface> {
+        try {
+            const isFollowed = await this.channelModel.findOne({
+                where: {
+                    followById: user.id,
+                    followedToId: followedToId
+                },
+                include: [{ model: User, as: 'followTo' }]
+            })
+            return repsonseSender(STRINGCONST.DATA_FETCHED, HttpStatus.OK, true, isFollowed)
         } catch (error) {
             throw new BadRequestException(error.message)
         }

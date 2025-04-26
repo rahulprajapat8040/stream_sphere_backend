@@ -64,4 +64,29 @@ export class VidController {
         return this.vidService.getAllComment({ page, limit, videoId })
     }
 
+    @Post('start-following')
+    async newFollwing(@Req() req: Request, @Body('followedToId') followedToId: string) {
+        console.log('fo', followedToId)
+        return this.vidService.startFollowing(req.user as User, followedToId)
+    }
+
+    @Post('un-follow')
+    async unFollow() {
+
+    }
+
+    @Get('get-following')
+    async getFollowings(
+        @Req() req: Request,
+        @Query('page') page?: number,
+        @Query('limit') limit?: number,
+        @Query('videoId') videoId?: string,) {
+        return this.vidService.getFollowings(req.user as User, { page, limit, videoId })
+    }
+
+    @Get('get-followed-detail')
+    async getFollowingDetail(@Req() req: Request, @Query('followedToId') followedToId: string) {
+        return this.vidService.getFollowingDetail(req.user as User, followedToId)
+    }
+
 }
